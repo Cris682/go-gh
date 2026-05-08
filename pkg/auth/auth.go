@@ -34,22 +34,22 @@ const (
 //
 // Returns "", "default" if no applicable token is found.
 func TokenForHost(host string) (string, string) {
-	if token, source := TokenFromEnvOrConfig(host); token != "" {
-		return token, source
+	token, source, err := TokenForHostWithError(host)
+	if err != nil || token == "" {
+		return "", defaultSource
 	}
 
-	ghExe := os.Getenv("GH_PATH")
-	if ghExe == "" {
-		ghExe, _ = safeexec.LookPath("gh")
-	}
+	return token, source
+}
 
-	if ghExe != "" {
-		if token, source := tokenFromGh(ghExe, host); token != "" {
-			return token, source
-		}
-	}
-
-	return "", defaultSource
+// TokenForHostWithError retrieves an authentication token and the source of that token for the
+// specified host. When no token can be found and a concrete failure happened while trying
+// "gh auth token", the underlying error is returned.
+//
+// Returns "", "default", nil if no applicable token is found.
+func TokenForHostWithError(host string) (string, string, error) {
+	cfg, _ := config.Read(nil)
+	return tokenForHostWithError(cfg, host)
 }
 
 // TokenFromEnvOrConfig retrieves an authentication token from environment variables or the config
@@ -99,13 +99,42 @@ func tokenForHost(cfg *config.Config, host string) (string, string) {
 	return token, oauthToken
 }
 
-func tokenFromGh(path string, host string) (string, string) {
-	cmd := exec.Command(path, "auth", "token", "--secure-storage", "--hostname", host)
-	result, err := cmd.Output()
-	if err != nil {
-		return "", "gh"
+func tokenForHostWithError(cfg *config.Config, host string) (string, string, error) {
+	if token, source := tokenForHost(cfg, host); token != "" {
+		return token, source, nil
 	}
-	return strings.TrimSpace(string(result)), "gh"
+
+	ghExe := os.Getenv("GH_PATH")
+	if ghExe == "" {
+		var err error
+		ghExe, err = safeexec.LookPath("gh")
+		if err != nil {
+			return "", defaultSource, fmt.Errorf("could not find gh executable in PATH: %w", err)
+		}
+	}
+
+	token, source, err := tokenFromGh(ghExe, host)
+	if err != nil {
+		return "", source, err
+	}
+	if token == "" {
+		return "", defaultSource, nil
+	}
+
+	return token, source, nil
+}
+
+func tokenFromGh(path string, host string) (string, string, error) {
+	cmd := exec.Command(path, "auth", "token", "--secure-storage", "--hostname", host)
+	result, err := cmd.CombinedOutput()
+	if err != nil {
+		output := strings.TrimSpace(string(result))
+		if output != "" {
+			return "", "gh", fmt.Errorf("failed to run gh auth token for host %s: %s", host, output)
+		}
+		return "", "gh", fmt.Errorf("failed to run gh auth token for host %s: %w", host, err)
+	}
+	return strings.TrimSpace(string(result)), "gh", nil
 }
 
 // KnownHosts retrieves a list of hosts that have corresponding

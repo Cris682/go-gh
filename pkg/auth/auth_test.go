@@ -147,6 +147,37 @@ func TestTokenForHost(t *testing.T) {
 	}
 }
 
+func TestTokenForHostWithError(t *testing.T) {
+	t.Run("returns detailed error when gh executable is missing", func(t *testing.T) {
+		t.Setenv("GH_PATH", "")
+		t.Setenv("PATH", "")
+		t.Setenv("GITHUB_TOKEN", "")
+		t.Setenv("GITHUB_ENTERPRISE_TOKEN", "")
+		t.Setenv("GH_TOKEN", "")
+		t.Setenv("GH_ENTERPRISE_TOKEN", "")
+
+		token, source, err := tokenForHostWithError(testNoHostsConfig(), "missing-gh.example.com")
+		require.Empty(t, token)
+		require.Equal(t, defaultSource, source)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "could not find gh executable in PATH")
+	})
+
+	t.Run("returns detailed error when gh command fails", func(t *testing.T) {
+		t.Setenv("GH_PATH", "C:\\definitely\\missing\\gh.exe")
+		t.Setenv("GITHUB_TOKEN", "")
+		t.Setenv("GITHUB_ENTERPRISE_TOKEN", "")
+		t.Setenv("GH_TOKEN", "")
+		t.Setenv("GH_ENTERPRISE_TOKEN", "")
+
+		token, source, err := tokenForHostWithError(testNoHostsConfig(), "broken-gh.example.com")
+		require.Empty(t, token)
+		require.Equal(t, "gh", source)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "failed to run gh auth token for host broken-gh.example.com")
+	})
+}
+
 func TestDefaultHost(t *testing.T) {
 	tests := []struct {
 		name         string

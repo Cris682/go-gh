@@ -49,6 +49,21 @@ func TestResolveOptions(t *testing.T) {
 	}
 }
 
+func TestResolveOptions_TokenLookupErrorIsSurfaced(t *testing.T) {
+	testutils.StubConfig(t, testConfigNoHosts())
+	t.Setenv("PATH", "")
+	t.Setenv("GH_PATH", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GITHUB_ENTERPRISE_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GH_ENTERPRISE_TOKEN", "")
+
+	_, err := resolveOptions(ClientOptions{Host: "missing-gh.example.com"})
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "authentication token not found for host missing-gh.example.com")
+	assert.ErrorContains(t, err, "could not find gh executable in PATH")
+}
+
 func TestOptionsNeedResolution(t *testing.T) {
 	tests := []struct {
 		name string
@@ -168,5 +183,11 @@ hosts:
     user: user1
     oauth_token: token
     git_protocol: ssh
+`
+}
+
+func testConfigNoHosts() string {
+	return `
+http_unix_socket: socket
 `
 }
